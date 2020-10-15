@@ -2,14 +2,14 @@ import xml.etree.ElementTree as ET
 import os
 import json
 
-class VOC2YOLO():
+class VOC2COCO():
 
   def __init__(self):
-    self.yolo = dict()
-    self.yolo['images'] = []
-    self.yolo['type'] = 'instances'
-    self.yolo['annotations'] = []
-    self.yolo['categories'] = []
+    self.coco = dict()
+    self.coco['images'] = []
+    self.coco['type'] = 'instances'
+    self.coco['annotations'] = []
+    self.coco['categories'] = []
     
     self.category_set = dict()
     self.image_set = set()
@@ -25,7 +25,7 @@ class VOC2YOLO():
       self.category_item_id += 1
       category_item['id'] = self.category_item_id
       category_item['name'] = name
-      self.yolo['categories'].append(category_item)
+      self.coco['categories'].append(category_item)
       self.category_set[name] = self.category_item_id
       return self.category_item_id
   
@@ -42,7 +42,7 @@ class VOC2YOLO():
       image_item['file_name'] = file_name
       image_item['width'] = size['width']
       image_item['height'] = size['height']
-      self.yolo['images'].append(image_item)
+      self.coco['images'].append(image_item)
       self.image_set.add(file_name)
       return self.image_id
   
@@ -76,7 +76,7 @@ class VOC2YOLO():
       annotation_item['category_id'] = category_id
       self.annotation_id += 1
       annotation_item['id'] = self.annotation_id
-      self.yolo['annotations'].append(annotation_item)
+      self.coco['annotations'].append(annotation_item)
   
   
   def parseXmlFiles(self,xml_path,json_file):
@@ -167,7 +167,7 @@ class VOC2YOLO():
                       #print('add annotation with {},{},{},{}'.format(object_name, current_image_id, current_category_id,bbox))
                       
                       self.addAnnoItem(object_name, current_image_id, current_category_id, bbox)
-      json.dump(self.yolo, open(json_file, 'w'),indent=4)  
+      json.dump(self.coco, open(json_file, 'w'),indent=4)  
 
 #generate specified quantity train data, the others as val data
 def generate_data(num,src,dst,classes = {'apple':90,'orange':90}):
@@ -207,11 +207,11 @@ def generate_data(num,src,dst,classes = {'apple':90,'orange':90}):
     train_xml_dir = [src +'Annotations/' + str(index) + '.xml' for index in imgs['train']]
     val_xml_dir = [src +'Annotations/' + str(index) + '.xml' for index in imgs['val']]
 
-    train_VOC2YOLO5 = VOC2YOLO5()
-    val_VOC2YOLO5 = VOC2YOLO5()
+    train_VOC2COCO = VOC2COCO()
+    val_VOC2COCO = VOC2COCO()
     
-    train_VOC2YOLO5.parseXmlFiles(train_xml_dir,dst+'annotations/')
-    val_VOC2YOLO5.parseXmlFiles(val_xml_dir,dst+'annotations/')
+    train_VOC2COCO.parseXmlFiles(train_xml_dir,dst+'annotations/')
+    val_VOC2COCO.parseXmlFiles(val_xml_dir,dst+'annotations/')
 
     #copy_imgs(src,dst,imgs)
 
