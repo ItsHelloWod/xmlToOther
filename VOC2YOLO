@@ -1,0 +1,240 @@
+import xml.etree.ElementTree as ET
+import os
+import json
+
+class VOC2YOLO():
+
+  def __init__(self):
+    self.yolo = dict()
+    self.yolo['images'] = []
+    self.yolo['type'] = 'instances'
+    self.yolo['annotations'] = []
+    self.yolo['categories'] = []
+    
+    self.category_set = dict()
+    self.image_set = set()
+    
+    self.category_item_id = -1
+    self.image_id = 0
+    self.annotation_id = 0
+  
+  
+  def addCatItem(self,name):
+      category_item = dict()
+      category_item['supercategory'] = 'none'
+      self.category_item_id += 1
+      category_item['id'] = self.category_item_id
+      category_item['name'] = name
+      self.yolo['categories'].append(category_item)
+      self.category_set[name] = self.category_item_id
+      return self.category_item_id
+  
+  def addImgItem(self,file_name, size):
+      if file_name is None:
+          raise Exception('Could not find filename tag in xml file.')
+      if size['width'] is None:
+          raise Exception('Could not find width tag in xml file.')
+      if size['height'] is None:
+          raise Exception('Could not find height tag in xml file.')
+      self.image_id += 1
+      image_item = dict()
+      image_item['id'] = self.image_id
+      image_item['file_name'] = file_name
+      image_item['width'] = size['width']
+      image_item['height'] = size['height']
+      self.yolo['images'].append(image_item)
+      self.image_set.add(file_name)
+      return self.image_id
+  
+  
+  def addAnnoItem(self,object_name, image_id, category_id, bbox):
+      annotation_item = dict()
+      '''
+      annotation_item['segmentation'] = []
+      seg = []
+      # bbox[] is x,y,w,h
+      # left_top
+      seg.append(bbox[0])
+      seg.append(bbox[1])
+      # left_bottom
+      seg.append(bbox[0])
+      seg.append(bbox[1] + bbox[3])
+      # right_bottom
+      seg.append(bbox[0] + bbox[2])
+      seg.append(bbox[1] + bbox[3])
+      # right_top
+      seg.append(bbox[0] + bbox[2])
+      seg.append(bbox[1])
+  
+      annotation_item['segmentation'].append(seg)
+      '''
+      annotation_item['area'] = bbox[2] * bbox[3]
+      annotation_item['iscrowd'] = 0
+      annotation_item['ignore'] = 0
+      annotation_item['image_id'] = self.image_id
+      annotation_item['bbox'] = bbox
+      annotation_item['category_id'] = category_id
+      self.annotation_id += 1
+      annotation_item['id'] = self.annotation_id
+      self.yolo['annotations'].append(annotation_item)
+  
+  
+  def parseXmlFiles(self,xml_path,json_file):
+      for xml_file in xml_path:
+          if not xml_file.endswith('.xml'):
+              continue
+  
+          bndbox = dict()
+          size = dict()
+          current_image_id = None
+          current_category_id = None
+          file_name = None
+          size['width'] = None
+          size['height'] = None
+          size['depth'] = None
+  
+          tree = ET.parse(xml_file)
+          root = tree.getroot()
+          if root.tag != 'annotation':
+              raise Exception('pascal voc xml root element should be annotation, rather than {}'.format(root.tag))
+  
+          # elem is <folder>, <filename>, <size>, <object>
+          for elem in root:
+              current_parent = elem.tag
+              current_sub = None
+              object_name = None
+  
+              if elem.tag == 'folder':
+                  continue
+  
+              if elem.tag == 'filename':
+                  file_name = elem.text
+                  if file_name in self.category_set:
+                      raise Exception('file_name duplicated')
+  
+              # add img item only after parse <size> tag
+              elif current_image_id is None and file_name is not None and size['width'] is not None:
+                  if file_name not in self.image_set:
+                      current_image_id = self.addImgItem(file_name, size)
+                      print('add image with {} and {}'.format(file_name, size))
+                  else:
+                      print(self.image_set)
+                      raise Exception('duplicated image: {}'.format(file_name))
+                      # subelem is <width>, <height>, <depth>, <name>, <bndbox>
+              for subelem in elem:
+                  bndbox['xmin'] = None
+                  bndbox['xmax'] = None
+                  bndbox['ymin'] = None
+                  bndbox['ymax'] = None
+  
+                  current_sub = subelem.tag
+                  if current_parent == 'object' and subelem.tag == 'name':
+                      object_name = subelem.text
+                      if object_name not in self.category_set:
+                          current_category_id = self.addCatItem(object_name)
+                      else:
+                          current_category_id = self.category_set[object_name]
+  
+                  elif current_parent == 'size':
+                      if size[subelem.tag] is not None:
+                          raise Exception('xml structure broken at size tag.')
+                      size[subelem.tag] = int(subelem.text)
+  
+                  # option is <xmin>, <ymin>, <xmax>, <ymax>, when subelem is <bndbox>
+                  for option in subelem:
+                      if current_sub == 'bndbox':
+                          if bndbox[option.tag] is not None:
+                              raise Exception('xml structure corrupted at bndbox tag.')
+                          bndbox[option.tag] = int(option.text)
+  
+                  # only after parse the <object> tag
+                  if bndbox['xmin'] is not None:
+                      if object_name is None:
+                          raise Exception('xml structure broken at bndbox tag')
+                      if current_image_id is None:
+                          raise Exception('xml structure broken at bndbox tag')
+                      if current_category_id is None:
+                          raise Exception('xml structure broken at bndbox tag')
+                      bbox = []
+                      # x
+                      bbox.append(bndbox['xmin'])
+                      # y
+                      bbox.append(bndbox['ymin'])
+                      # w
+                      bbox.append(bndbox['xmax'] - bndbox['xmin'])
+                      # h
+                      bbox.append(bndbox['ymax'] - bndbox['ymin'])
+                      #print('add annotation with {},{},{},{}'.format(object_name, current_image_id, current_category_id,bbox))
+                      
+                      self.addAnnoItem(object_name, current_image_id, current_category_id, bbox)
+      json.dump(self.yolo, open(json_file, 'w'),indent=4)  
+
+#generate specified quantity train data, the others as val data
+def generate_data(num,src,dst,classes = {'apple':90,'orange':90}):
+    import random
+    total_xml=os.listdir(src+'Annotations/')
+    
+    imgs={}
+    imgs['train'] = []
+    imgs['val'] = []
+    for class_name in classes.keys():
+        train = []
+        val = []
+        while len(train) + len(val)< classes[class_name]:
+            index = random.randint(1,95)#95 is the size of each class, you can set it by yourself
+            #避免缺失数据
+            exsit = False
+            while not exsit:
+                index = random.randint(1,95)
+                name=class_name+'_'+str(index)
+                exsit = os.path.isfile(src+'Annotations/'+name+'.xml')
+            
+            img_name = class_name+'_'+str(index)
+            if len(train) < num and img_name not in train:
+                train.append(class_name+'_'+str(index))
+            elif img_name not in val:
+                val.append(class_name+'_'+str(index))
+        imgs[class_name]={}
+        imgs['train'].extend(train)
+        imgs['val'].extend(val)
+        print(len(train),len(val))
+        val=[]
+        train=[]
+    
+    random.shuffle(imgs['train'])
+    random.shuffle(imgs['val'])
+
+    train_xml_dir = [src +'Annotations/' + str(index) + '.xml' for index in imgs['train']]
+    val_xml_dir = [src +'Annotations/' + str(index) + '.xml' for index in imgs['val']]
+
+    train_VOC2YOLO5 = VOC2YOLO5()
+    val_VOC2YOLO5 = VOC2YOLO5()
+    
+    train_VOC2YOLO5.parseXmlFiles(train_xml_dir,dst+'annotations/')
+    val_VOC2YOLO5.parseXmlFiles(val_xml_dir,dst+'annotations/')
+
+    #copy_imgs(src,dst,imgs)
+
+#copy img from src to dst 
+def copy_imgs(src,dst,indices):
+  dst_train = dst + 'train2017/'
+  dst_val = dst + 'val2017/'
+
+  if os.path.exists(dst_train):
+    shutil.rmtree(dst_train)
+    shutil.rmtree(dst_val)
+
+  os.mkdir(dst_train)
+  os.mkdir(dst_val)
+
+  for img_name in indices['train']:
+    train_src_dir = src + 'JPEGImages/' + img_name + '.jpg'
+    trian_dst_dir = dst_train + img_name + '.jpg'
+    shutil.copyfile(train_src_dir,trian_dst_dir)
+
+  for img_name in indices['val']:
+    val__src_dir = src + 'JPEGImages/' + img_name + '.jpg'
+    val_dst_dir = dst_val + img_name + '.jpg'
+    shutil.copyfile(val__src_dir,val_dst_dir)
+  
+  print("copy {} and {} images on trainset and valset".format(len(os.listdir(dst+'train2017')),len(os.listdir(dst+'val2017'))))
