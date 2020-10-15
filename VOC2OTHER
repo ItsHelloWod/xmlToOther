@@ -168,3 +168,106 @@ class VOC2COCO():
                       
                       self.addAnnoItem(object_name, current_image_id, current_category_id, bbox)
       json.dump(self.coco, open(json_file, 'w'),indent=4)  
+      
+
+class VOC2YOLO5():
+  def __init__(self):
+    self.category_set = dict()
+    self.category_item_id = -1
+  
+  def addCatItem(self,name):
+      category_item = dict()
+      self.category_item_id += 1
+      category_item['id'] = self.category_item_id
+      category_item['name'] = name
+      self.category_set[name] = self.category_item_id
+      return self.category_item_id
+
+  def normalize(self,bbx, size):
+      if size['width'] is None:
+          raise Exception('Could not find width tag in xml file.')
+      if size['height'] is None:
+          raise Exception('Could not find height tag in xml file.')
+      width = (bbx[2] - bbx[0])/size['width']
+      height = (bbx[3] - bbx[1])/size['height']
+
+      cneter_x = bbx[0]/size['width'] + width/2
+      center_y = bbx[1]/size['height'] + height/2
+      
+      return round(cneter_x,6),round(center_y,6),round(width,6),round(height,6)
+
+  def parseXmlFiles(self,xml_path,dst):
+      for xml_file in xml_path:
+          if not xml_file.endswith('.xml'):
+              continue
+          
+          bndbox = dict()
+          size = dict()
+          file_name = None
+          current_category_id = None
+          size['width'] = None
+          size['height'] = None
+          size['depth'] = None
+
+          tree = ET.parse(xml_file)
+          root = tree.getroot()
+          if root.tag != 'annotation':
+              raise Exception('pascal voc xml root element should be annotation, rather than {}'.format(root.tag))
+          
+          # elem is <folder>, <filename>, <size>, <object>
+          for elem in root:
+              current_parent = elem.tag
+              current_sub = None
+              object_name = None
+  
+              if elem.tag == 'folder':
+                  continue
+
+              if elem.tag == 'filename':
+                  file_name = elem.text
+                  if file_name in self.category_set:
+                      raise Exception('file_name duplicated')
+              file_txt_name = file_name[:-3] + 'txt'
+              files = open(dst+file_txt_name,mode = 'a')
+              
+              
+              # subelem is <width>, <height>, <depth>, <name>, <bndbox>
+              for subelem in elem:
+                  bndbox['x'] = None
+                  bndbox['y'] = None
+                  bndbox['width'] = None
+                  bndbox['height'] = None
+  
+                  current_sub = subelem.tag
+                  if current_parent == 'object' and subelem.tag == 'name':
+                      object_name = subelem.text
+                      if object_name not in self.category_set:
+                          current_category_id = self.addCatItem(object_name)
+                      else:
+                          current_category_id = self.category_set[object_name]
+
+                  elif current_parent == 'size':
+                      if size[subelem.tag] is not None:
+                          raise Exception('xml structure broken at size tag.')
+                      size[subelem.tag] = int(subelem.text)
+  
+                  # option is <xmin>, <ymin>, <xmax>, <ymax>, when subelem is <bndbox>
+                  bbox=[]
+                  for option in subelem:
+                      if current_sub == 'bndbox':
+                          if bndbox['x'] is not None:
+                              raise Exception('xml structure corrupted at bndbox tag.')
+                          bbox.append(int(option.text))
+                  if current_sub == 'bndbox':
+                    bndbox['x'],bndbox['y'],bndbox['width'],bndbox['height'] = self.normalize(bbox,size)
+
+                  # only after parse the <object> tag
+                  if bndbox['x'] is not None:
+                      if object_name is None:
+                          raise Exception('xml structure broken at bndbox tag')
+                      if current_category_id is None:
+                          raise Exception('xml structure broken at bndbox tag')
+
+                      #print('add annotation with {},{},{},{}'.format(object_name, current_image_id, current_category_id,bbox))
+                      files.write(str(current_category_id) + ' ' + str(bndbox['x']) + ' ' + str(bndbox['y']) + ' '+ str(bndbox['width']) + ' '+ str(bndbox['height']) + '\n')
+              files.close()
