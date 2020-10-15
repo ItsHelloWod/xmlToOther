@@ -1,5 +1,5 @@
-# xmlToYolo
-Object detection data transform from voc to yolo
+# xmlToOther
+Object detection data transform from voc to yolo/coco
 
 A class VOC2YOLO is responsible for transformation of voc to yolo.
 
